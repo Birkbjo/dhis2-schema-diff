@@ -1,0 +1,14 @@
+{
+  "name": "dhis2-schema-diff",
+  "version": "0",
+  "description": "A small utility tool to diff the server schemas between two DHIS2 versions",
+  "main": "index.js",
+  "repository": "https://github.com/Birkbjo/dhis2-schema-diff",
+  "author": "Birk Johansson",
+  "license": "MIT",
+  "dependencies": {
+    "jsondiffpatch": "^0.3.11",
+    "request": "^2.88.0",
+    "yargs": "^13.2.2"
+  }
+}

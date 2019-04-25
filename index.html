@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script
+            type="text/javascript"
+            src="./node_modules/jsondiffpatch/dist/jsondiffpatch.umd.slim.js"
+        ></script>
+        <link rel="stylesheet" href="./style.css" type="text/css" />
+        <link
+            rel="stylesheet"
+            href="./node_modules/jsondiffpatch/dist/formatters-styles/html.css"
+            type="text/css"
+        />
+        <script type="text/javascript" src="generated.js"></script>
+        <script>
+            const htmlFormatter = jsondiffpatch.formatters.html;
+            
+            let hidden = true;
+            
+            function toggleHide() {
+                hidden = !hidden;
+                if(hidden) {
+                    htmlFormatter.hideUnchanged();
+                } else {
+                    htmlFormatter.showUnchanged();
+                }
+            }
+            </script>
+    </head>
+    <body>
+        <div>
+            <div id="controls">
+                <input type="button" value="Show / hide unchanged" onClick="toggleHide()"/>
+            </div>
+            <div id="visual"></div>
+            <hr />
+            <div id="annotated"></div>
+            <script>
+                htmlFormatter.hideUnchanged();
+                document.getElementById(
+                    'visual'
+                ).innerHTML = htmlFormatter.format(delta, left);
+
+            </script>
+        </div>
+    </body>
+</html>
