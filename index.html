@@ -14,7 +14,18 @@
         <script type="text/javascript" src="generated.js"></script>
         <script>
             const htmlFormatter = jsondiffpatch.formatters.html;
-            
+            const FormatterClass = htmlFormatter.default;
+            const original = FormatterClass.prototype.nodeBegin;
+
+            FormatterClass.prototype.nodeBegin = function nodeBeginHooked(context, key, leftKey, type, nodeType) {
+                    if(leftKey === 'name' && type === "unchanged") {
+                        type = "node"
+                        original.call(this, context, key, leftKey, type, nodeType )
+                    } else {
+                        original.apply(this, arguments)
+                    }
+                }
+
             let hidden = true;
             
             function toggleHide() {
