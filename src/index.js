@@ -28,7 +28,7 @@ const schemaDiffIdentifier = (info1, info2) =>
     `${schemaIdentifier(info1)}__${schemaIdentifier(info2)}`;
 
 // We use the singular property as an unique identifier for schemas
-// type is 
+// type is
 const Differ = jsondiffpatch.create({
     objectHash: obj => obj.singular || obj.type,
     propertyFilter: name => name !== 'href' && name !== 'apiEndpoint',
@@ -41,7 +41,14 @@ async function simpleJsonReq(url, opts) {
         //console.log(res)
         return res.body;
     } catch (e) {
-        console.log('Request', url, 'failed:', e.statusCode, e.statusMessage, '\nExiting');
+        console.log(
+            'Request',
+            url,
+            'failed:',
+            e.statusCode,
+            e.statusMessage,
+            '\nExiting'
+        );
         yargs.exit();
     }
 }
@@ -91,7 +98,7 @@ async function getSchemas(url, baseUrl) {
 
 function diff(left, right, output, generate = false) {
     const delta = Differ.diff(left.schemas, right.schemas);
-    if(generate !== false) {
+    if (generate !== false) {
         generateVisuals(generate, left, right, delta);
     }
     if (output) {
@@ -138,8 +145,11 @@ function generateHtml(left, delta, meta) {
 
 function generateVisuals(fileName, left, right, delta) {
     console.info('Generating visuals...');
-    
-    const html = generateHtml(left.schemas, delta, { left: left.meta, right: right.meta });
+
+    const html = generateHtml(left.schemas, delta, {
+        left: left.meta,
+        right: right.meta,
+    });
     if (fileName === '') {
         fileName = `${schemaDiffIdentifier(left.meta, right.meta)}.html`;
     }
@@ -198,17 +208,19 @@ yargs
             });
         },
         async function(argv) {
-            console.log(argv.url1);
-            console.log(__dirname);
             start(argv);
-            console.log(argv);
         }
     )
-    .check((argv) => {
-        if(!argv.baseUrl && !(utils.isRelativeUrl(argv.url1) || utils.isRelativeUrl(argv.url2))) {
-            throw new Error("Must specify absolute urls when base-url is not given.")
+    .check(argv => {
+        if (
+            !argv.baseUrl &&
+            !(utils.isRelativeUrl(argv.url1) || utils.isRelativeUrl(argv.url2))
+        ) {
+            throw new Error(
+                'Must specify absolute urls when base-url is not given.'
+            );
         }
-        return true
+        return true;
     }, true)
     .recommendCommands()
     .help().argv;

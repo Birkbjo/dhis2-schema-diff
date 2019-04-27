@@ -15,7 +15,7 @@
             const original = FormatterClass.prototype.nodeBegin;
 
             FormatterClass.prototype.nodeBegin = function nodeBeginHooked(context, key, leftKey, type, nodeType) {
-                    if(leftKey === 'name' && type === "unchanged") {
+                    if(leftKey === 'singular' && type === "unchanged") {
                         type = "node"
                         original.call(this, context, key, leftKey, type, nodeType )
                     } else {
