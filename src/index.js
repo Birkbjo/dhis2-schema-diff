@@ -1,3 +1,4 @@
+#! /usr/bin/env node
 const yargs = require('yargs');
 const path = require('path');
 const jsondiffpatch = require('jsondiffpatch');
@@ -7,7 +8,6 @@ const ejs = require('ejs');
 const got = require('got');
 
 const defaultOpts = {
-    absoluteUrl: false,
     schemasEndpoint: '/api/schemas.json',
     infoEndpoint: '/api/system/info.json',
     cacheLocation: 'cache',
@@ -27,6 +27,8 @@ const schemaIdentifier = info => `${info.version}_${info.revision}`;
 const schemaDiffIdentifier = (info1, info2) =>
     `${schemaIdentifier(info1)}__${schemaIdentifier(info2)}`;
 
+// We use the singular property as an unique identifier for schemas
+// type is 
 const Differ = jsondiffpatch.create({
     objectHash: obj => obj.singular || obj.type,
     propertyFilter: name => name !== 'href' && name !== 'apiEndpoint',
@@ -39,7 +41,7 @@ async function simpleJsonReq(url, opts) {
         //console.log(res)
         return res.body;
     } catch (e) {
-        console.log('Request failed:', e, '\nExiting');
+        console.log('Request', url, 'failed:', e.statusCode, e.statusMessage, '\nExiting');
         yargs.exit();
     }
 }
@@ -63,7 +65,6 @@ async function getSchemasFromFile(file) {
 }
 
 async function getSchemas(url, baseUrl) {
-    let schemas;
     // if (utils.isUrl(url)) {
     console.debug('Getting server-info for ', baseUrl, url);
     const reqObj = { baseUrl };
@@ -76,7 +77,7 @@ async function getSchemas(url, baseUrl) {
             info.revision
         }`
     );
-    schemas = await simpleJsonReq(schemasUrl, reqObj);
+    const schemas = await simpleJsonReq(schemasUrl, reqObj);
     const fileName = schemaIdentifier(info);
 
     writeSchemasToFile(fileName, schemas, info);
@@ -88,9 +89,11 @@ async function getSchemas(url, baseUrl) {
     return schemas;
 }
 
-function diff(schemas1, schemas2, output, visuals = false) {
-    const delta = Differ.diff(schemas1.schemas, schemas2.schemas);
-    visuals && generateVisuals(visuals, schemas1, schemas2, delta);
+function diff(left, right, output, generate = false) {
+    const delta = Differ.diff(left.schemas, right.schemas);
+    if(generate !== false) {
+        generateVisuals(generate, left, right, delta);
+    }
     if (output) {
         fs.writeFile(output, JSON.stringify(delta), err => {
             if (err) throw err;
@@ -99,20 +102,45 @@ function diff(schemas1, schemas2, output, visuals = false) {
     return delta;
 }
 
-function generateHtml(left, delta) {
+function generateHtml(left, delta, meta) {
+    const assets = {
+        jsondiffpatchCSS: utils.btoa(
+            fs.readFileSync(
+                path.join(
+                    __dirname,
+                    '..',
+                    'node_modules/jsondiffpatch/dist/formatters-styles/html.css'
+                )
+            )
+        ),
+        jsondiffpatchJS: utils.btoa(
+            fs.readFileSync(
+                path.join(
+                    __dirname,
+                    '..',
+                    'node_modules/jsondiffpatch/dist/jsondiffpatch.umd.slim.js'
+                )
+            )
+        ),
+    };
+
     const template = fs
         .readFileSync(path.join(__dirname, 'index.ejs'))
         .toString();
+
     return ejs.render(template, {
         left,
         delta,
+        meta,
+        ...assets,
     });
 }
 
 function generateVisuals(fileName, left, right, delta) {
     console.info('Generating visuals...');
-    const html = generateHtml(left, delta);
-    if (fileName === 'generated.html') {
+    
+    const html = generateHtml(left.schemas, delta, { left: left.meta, right: right.meta });
+    if (fileName === '') {
         fileName = `${schemaDiffIdentifier(left.meta, right.meta)}.html`;
     }
     fs.writeFile(fileName, html, err => {
@@ -120,11 +148,11 @@ function generateVisuals(fileName, left, right, delta) {
         console.log('Visual output written: ', fileName);
     });
 }
-async function start({ url1, url2, baseUrl, absoluteUrl, output, generate }) {
-    const prom1 = getSchemas(url1, baseUrl, absoluteUrl);
-    const prom2 = getSchemas(url2, baseUrl, absoluteUrl);
-    const [schemasObj1, schemasObj2] = await Promise.all([prom1, prom2]);
-    diff(schemasObj1, schemasObj2, output, generate);
+async function start({ url1, url2, baseUrl, output, generate }) {
+    const prom1 = getSchemas(url1, baseUrl);
+    const prom2 = getSchemas(url2, baseUrl);
+    const [left, right] = await Promise.all([prom1, prom2]);
+    return diff(left, right, output, generate);
 }
 
 yargs
@@ -150,19 +178,11 @@ yargs
             });
             yargs.option('base-url', {
                 alias: 'b',
-                // nargs: 1,
-                //  default: defaultRequestOpts.baseUrl,
                 coerce: val =>
                     val || (val === '' && defaultRequestOpts.baseUrl),
                 describe:
                     'BaseUrl to use for downloading schemas. If this is set url1 and url2 should be relative to this url, eg. /dev.',
                 type: 'string',
-            });
-            yargs.option('absolute-url', {
-                default: defaultOpts.absoluteUrl,
-                describe:
-                    'Specifies that the urls are absolute, indicating that urls are pointing at the schemas.json resource directly. Ignores base-url, and default schema-location (/api/schemas.json)',
-                type: 'boolean',
             });
             yargs.option('output', {
                 alias: 'o',
@@ -173,16 +193,22 @@ yargs
             yargs.option('generate', {
                 alias: 'g',
                 type: 'string',
-                coerce: val => val || (val === '' && 'generated.html'), // This handles as a default if just the flag is given
                 describe:
-                    'Path to write a file that can be used to show visual diff using jsondiffpatcher ',
+                    'Path to write a file that can be used to show visual diff using jsondiffpatcher. Can be used as a flag, writing to current working directory with filename LEFT-version_revision__RIGHT-version_revision.html',
             });
         },
         async function(argv) {
             console.log(argv.url1);
+            console.log(__dirname);
             start(argv);
             console.log(argv);
         }
     )
+    .check((argv) => {
+        if(!argv.baseUrl && !(utils.isRelativeUrl(argv.url1) || utils.isRelativeUrl(argv.url2))) {
+            throw new Error("Must specify absolute urls when base-url is not given.")
+        }
+        return true
+    }, true)
     .recommendCommands()
     .help().argv;

@@ -2,20 +2,13 @@
  <meta charset="UTF-8"> 
 <html>
     <head>
-        <script
-            type="text/javascript"
-            src="./node_modules/jsondiffpatch/dist/jsondiffpatch.umd.slim.js"
-        ></script>
-        <link rel="stylesheet" href="./style.css" type="text/css" />
-        <link
-            rel="stylesheet"
-            href="./node_modules/jsondiffpatch/dist/formatters-styles/html.css"
-            type="text/css"
-        />
+        <link rel="stylesheet" href="data:text/css;base64,<%= jsondiffpatchCSS %>">
+        <script src="data:application/javascript;base64,<%= jsondiffpatchJS %>"></script>
         <script>
             const left = <%- JSON.stringify(left) %>;
             const delta = <%- JSON.stringify(delta) %>;
-            </script>
+        </script>
+        
         <script>
             const htmlFormatter = jsondiffpatch.formatters.html;
             const FormatterClass = htmlFormatter.default;
@@ -54,7 +47,7 @@
                 htmlFormatter.hideUnchanged();
                 document.getElementById(
                     'visual'
-                ).innerHTML = htmlFormatter.format(delta, left.schemas);
+                ).innerHTML = htmlFormatter.format(delta, left);
 
             </script>
         </div>

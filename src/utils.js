@@ -18,9 +18,13 @@ function basicAuthHeader(user, pass) {
     return `Basic ${b64}`
 }
 
+function isRelativeUrl(url) {
+    return url.indexOf('http://') === 0 || url.indexOf('https://') === 0
+}
 
 module.exports = {
     isUrl,
+    isRelativeUrl,
     btoa,
     basicAuthHeader
 }
