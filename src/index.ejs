@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+ <meta charset="UTF-8"> 
+<html>
+    <head>
+        <script
+            type="text/javascript"
+            src="./node_modules/jsondiffpatch/dist/jsondiffpatch.umd.slim.js"
+        ></script>
+        <link rel="stylesheet" href="./style.css" type="text/css" />
+        <link
+            rel="stylesheet"
+            href="./node_modules/jsondiffpatch/dist/formatters-styles/html.css"
+            type="text/css"
+        />
+        <script>
+            const left = <%- JSON.stringify(left) %>;
+            const delta = <%- JSON.stringify(delta) %>;
+            </script>
+        <script>
+            const htmlFormatter = jsondiffpatch.formatters.html;
+            const FormatterClass = htmlFormatter.default;
+            const original = FormatterClass.prototype.nodeBegin;
+
+            FormatterClass.prototype.nodeBegin = function nodeBeginHooked(context, key, leftKey, type, nodeType) {
+                    if(leftKey === 'name' && type === "unchanged") {
+                        type = "node"
+                        original.call(this, context, key, leftKey, type, nodeType )
+                    } else {
+                        original.apply(this, arguments)
+                    }
+                }
+
+            let hidden = true;
+            
+            function toggleHide() {
+                hidden = !hidden;
+                if(hidden) {
+                    htmlFormatter.hideUnchanged();
+                } else {
+                    htmlFormatter.showUnchanged();
+                }
+            }
+            </script>
+    </head>
+    <body>
+        <div>
+            <div id="controls">
+                <input type="button" value="Show / hide unchanged" onClick="toggleHide()"/>
+            </div>
+            <div id="visual"></div>
+            <hr />
+            <div id="annotated"></div>
+            <script>
+                htmlFormatter.hideUnchanged();
+                document.getElementById(
+                    'visual'
+                ).innerHTML = htmlFormatter.format(delta, left.schemas);
+
+            </script>
+        </div>
+    </body>
+</html>

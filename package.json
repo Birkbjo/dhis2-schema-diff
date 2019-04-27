@@ -7,8 +7,9 @@
   "author": "Birk Johansson",
   "license": "MIT",
   "dependencies": {
+    "ejs": "^2.6.1",
+    "got": "^9.6.0",
     "jsondiffpatch": "^0.3.11",
-    "request": "^2.88.0",
     "yargs": "^13.2.2"
   }
 }

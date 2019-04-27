@@ -1,12 +1,10 @@
 const yargs = require('yargs');
-
-const Differ = require('jsondiffpatch').create({
-    objectHash: obj => obj.name || obj.type,
-    propertyFilter: name => name !== 'href' && name !== 'apiEndpoint',
-});
-const request = require('request');
+const path = require('path');
+const jsondiffpatch = require('jsondiffpatch');
 const fs = require('fs');
 const utils = require('./utils');
+const ejs = require('ejs');
+const got = require('got');
 
 const defaultOpts = {
     absoluteUrl: false,
@@ -18,40 +16,41 @@ const defaultOpts = {
 
 const defaultRequestOpts = {
     baseUrl: 'https://play.dhis2.org',
-    auth: {
-        user: 'admin',
-        pass: 'district',
-    },
     headers: {
         'x-requested-with': 'XMLHttpRequest',
+        Authorization: utils.basicAuthHeader('admin', 'district'),
     },
+    json: true,
 };
 
-function simpleJsonReq(opts, r = request) {
+const schemaIdentifier = info => `${info.version}_${info.revision}`;
+const schemaDiffIdentifier = (info1, info2) =>
+    `${schemaIdentifier(info1)}__${schemaIdentifier(info2)}`;
+
+const Differ = jsondiffpatch.create({
+    objectHash: obj => obj.singular || obj.type,
+    propertyFilter: name => name !== 'href' && name !== 'apiEndpoint',
+});
+
+async function simpleJsonReq(url, opts) {
     const reqOpts = { ...defaultRequestOpts, ...opts };
-    return new Promise((resolve, reject) =>
-        r.get(reqOpts, (err, response, body) => {
-            if (err) {
-                reject(err);
-            }
-            try {
-                resolve(JSON.parse(body));
-            } catch (e) {
-                console.log('Failed to parse', body);
-                reject(e);
-            }
-        })
-    );
+    try {
+        const res = await got(url, reqOpts);
+        //console.log(res)
+        return res.body;
+    } catch (e) {
+        console.log('Request failed:', e, '\nExiting');
+        yargs.exit();
+    }
 }
 
-async function writeSchemasToFile(fileName, schemas, meta) {
+function writeSchemasToFile(fileName, schemas, meta) {
     if (!meta) {
         throw new Error('Should have metadata before writing');
     }
     fs.mkdirSync(defaultOpts.cacheLocation, { recursive: true });
-    const stream = fs.createWriteStream(
-        `./${defaultOpts.cacheLocation}/${fileName}.json`
-    );
+    const fileLocation = `./${defaultOpts.cacheLocation}/${fileName}.json`;
+    const stream = fs.createWriteStream(fileLocation);
 
     schemas.meta = meta;
     stream.write(JSON.stringify(schemas));
@@ -63,27 +62,22 @@ async function getSchemasFromFile(file) {
     return JSON.parse(content);
 }
 
-async function getSchemas(url, baseUrl, useAbsoluteUrl) {
-    if (useAbsoluteUrl) {
-        baseUrl = null;
-    }
+async function getSchemas(url, baseUrl) {
     let schemas;
     // if (utils.isUrl(url)) {
     console.debug('Getting server-info for ', baseUrl, url);
-    const schemasUrl = useAbsoluteUrl
-        ? url
-        : `${url}${defaultOpts.schemasEndpoint}`;
-    const info = await simpleJsonReq({
-        url: `${url}${defaultOpts.infoEndpoint}`,
-        baseUrl,
-    });
+    const reqObj = { baseUrl };
+    const schemasUrl = url.concat(defaultOpts.schemasEndpoint);
+    const infoUrl = url.concat(defaultOpts.infoEndpoint);
+    console.log(schemasUrl, infoUrl);
+    const info = await simpleJsonReq(infoUrl, reqObj);
     console.info(
         `Downloading schemas for ${url}. Version: ${info.version} rev: ${
             info.revision
         }`
     );
-    schemas = await simpleJsonReq({ url: schemasUrl, baseUrl });
-    const fileName = `${info.version}_${info.revision}`;
+    schemas = await simpleJsonReq(schemasUrl, reqObj);
+    const fileName = schemaIdentifier(info);
 
     writeSchemasToFile(fileName, schemas, info);
     //  } else {
@@ -95,8 +89,8 @@ async function getSchemas(url, baseUrl, useAbsoluteUrl) {
 }
 
 function diff(schemas1, schemas2, output, visuals = false) {
-    const delta = Differ.diff(schemas1, schemas2);
-    visuals && generateVisuals(visuals, delta, schemas1);
+    const delta = Differ.diff(schemas1.schemas, schemas2.schemas);
+    visuals && generateVisuals(visuals, schemas1, schemas2, delta);
     if (output) {
         fs.writeFile(output, JSON.stringify(delta), err => {
             if (err) throw err;
@@ -105,38 +99,39 @@ function diff(schemas1, schemas2, output, visuals = false) {
     return delta;
 }
 
-function generateVisuals(fileName, delta, left) {
-    console.info('Generating visuals...');
-    fs.writeFile(
-        fileName,
-        `var left = ${JSON.stringify(left)}; var delta = ${JSON.stringify(
-            delta
-        )}`,
-        err => {
-            if (err) throw err;
-            console.log('Done!');
-        }
-    );
+function generateHtml(left, delta) {
+    const template = fs
+        .readFileSync(path.join(__dirname, 'index.ejs'))
+        .toString();
+    return ejs.render(template, {
+        left,
+        delta,
+    });
 }
-async function start({
-    url1,
-    url2,
-    baseUrl,
-    absoluteUrl,
-    output,
-    generate,
-}) {
-    const schemas1 = await getSchemas(url1, baseUrl, absoluteUrl);
-    const schemas2 = await getSchemas(url2, baseUrl, absoluteUrl);
 
-    diff(schemas1.schemas, schemas2.schemas, output, generate);
+function generateVisuals(fileName, left, right, delta) {
+    console.info('Generating visuals...');
+    const html = generateHtml(left, delta);
+    if (fileName === 'generated.html') {
+        fileName = `${schemaDiffIdentifier(left.meta, right.meta)}.html`;
+    }
+    fs.writeFile(fileName, html, err => {
+        if (err) throw err;
+        console.log('Visual output written: ', fileName);
+    });
+}
+async function start({ url1, url2, baseUrl, absoluteUrl, output, generate }) {
+    const prom1 = getSchemas(url1, baseUrl, absoluteUrl);
+    const prom2 = getSchemas(url2, baseUrl, absoluteUrl);
+    const [schemasObj1, schemasObj2] = await Promise.all([prom1, prom2]);
+    diff(schemasObj1, schemasObj2, output, generate);
 }
 
 yargs
     .scriptName('DHIS2-schema-differ')
     .usage('$0 <cmd> [args]')
     .command(
-        'start [url1] [url2]',
+        ['start [url1] [url2]', '$0'],
         'welcome ter yargs!',
         yargs => {
             yargs.positional('url1', {
@@ -155,12 +150,15 @@ yargs
             });
             yargs.option('base-url', {
                 alias: 'b',
-                default: defaultRequestOpts.baseUrl,
+                // nargs: 1,
+                //  default: defaultRequestOpts.baseUrl,
+                coerce: val =>
+                    val || (val === '' && defaultRequestOpts.baseUrl),
                 describe:
                     'BaseUrl to use for downloading schemas. If this is set url1 and url2 should be relative to this url, eg. /dev.',
                 type: 'string',
             });
-            yargs.option('absoluteUrl', {
+            yargs.option('absolute-url', {
                 default: defaultOpts.absoluteUrl,
                 describe:
                     'Specifies that the urls are absolute, indicating that urls are pointing at the schemas.json resource directly. Ignores base-url, and default schema-location (/api/schemas.json)',
@@ -175,7 +173,7 @@ yargs
             yargs.option('generate', {
                 alias: 'g',
                 type: 'string',
-                coerce: val => val || (val === '' && 'generated.js'),
+                coerce: val => val || (val === '' && 'generated.html'), // This handles as a default if just the flag is given
                 describe:
                     'Path to write a file that can be used to show visual diff using jsondiffpatcher ',
             });

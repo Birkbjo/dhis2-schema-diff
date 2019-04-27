@@ -9,8 +9,18 @@ function isUrl(url) {
     }
 }
 
+function btoa(str) {
+    return Buffer.from(str).toString('base64')
+}
+
+function basicAuthHeader(user, pass) {
+    const b64 = btoa(`${user}:${pass}`)
+    return `Basic ${b64}`
+}
+
 
 module.exports = {
     isUrl,
-
+    btoa,
+    basicAuthHeader
 }
