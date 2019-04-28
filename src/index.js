@@ -47,6 +47,7 @@ async function simpleJsonReq(url, opts) {
             'failed:',
             e.statusCode,
             e.statusMessage,
+            e.toString(),
             '\nExiting'
         );
         yargs.exit();
@@ -66,33 +67,62 @@ function writeSchemasToFile(fileName, schemas, meta) {
     return schemas;
 }
 
-async function getSchemasFromFile(file) {
-    const content = fs.readFileSync(file);
-    return JSON.parse(content);
+function checkFile(file) {
+    try {
+        const content = fs.readFileSync(file);
+        return JSON.parse(content);
+    } catch (e) {
+        return false;
+    }
 }
 
-async function getSchemas(url, baseUrl) {
-    // if (utils.isUrl(url)) {
-    console.debug('Getting server-info for ', baseUrl, url);
-    const reqObj = { baseUrl };
+function checkCache(info) {
+    const schemaName = schemaIdentifier(info);
+    try {
+        const content = fs.readFileSync(
+            path.join(defaultOpts.cacheLocation, schemaName)
+        );
+        return JSON.parse(content);
+    } catch (e) {
+        return false;
+    }
+}
+
+async function fromServer(url, baseUrl) {
     const schemasUrl = url.concat(defaultOpts.schemasEndpoint);
     const infoUrl = url.concat(defaultOpts.infoEndpoint);
-    console.log(schemasUrl, infoUrl);
-    const info = await simpleJsonReq(infoUrl, reqObj);
-    console.info(
-        `Downloading schemas for ${url}. Version: ${info.version} rev: ${
-            info.revision
-        }`
-    );
-    const schemas = await simpleJsonReq(schemasUrl, reqObj);
-    const fileName = schemaIdentifier(info);
+    const reqObj = { baseUrl };
+    let schemas;
 
-    writeSchemasToFile(fileName, schemas, info);
-    //  } else {
-    //    console.log("Loading from file", url)
-    //  schemas = getSchemasFromFile(url);
-    //  }
-    //  console.log(schemas)
+    const meta = await simpleJsonReq(infoUrl, reqObj);
+    if ((schemas = checkCache(meta))) {
+        console.log('Cache hit!');
+    } else {
+        schemas = await simpleJsonReq(schemasUrl, reqObj);
+        console.info(
+            `Downloading schemas for ${url}. Version: ${info.version} rev: ${
+                info.revision
+            }`
+        );
+    }
+    return {
+        meta,
+        schemas,
+    };
+}
+
+async function getSchemas(urlLike, baseUrl) {
+    // if (utils.isUrl(url)) {
+
+    let schemas;
+    let fileContents;
+    if ((fileContents = checkFile(urlLike))) {
+        schemas = fileContents;
+    } else {
+        schemas = await fromServer(urlLike, baseUrl);
+        const fileName = schemaIdentifier(schemas.info);
+        writeSchemasToFile(fileName, schemas, info);
+    }
     return schemas;
 }
 
@@ -212,9 +242,12 @@ yargs
         }
     )
     .check(argv => {
+        const { url1, url2 } = argv;
+
         if (
             !argv.baseUrl &&
-            !(utils.isRelativeUrl(argv.url1) || utils.isRelativeUrl(argv.url2))
+            ((utils.isRelativeUrl(argv.url1) && !fs.existsSync(url1)) ||
+                (utils.isRelativeUrl(argv.url2) && !fs.existsSync(url1)))
         ) {
             throw new Error(
                 'Must specify absolute urls when base-url is not given.'
